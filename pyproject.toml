@@ -1,0 +1,17 @@
+[tool.poetry]
+name = "dumbmemebot"
+version = "0.1.0"
+description = ""
+authors = ["Alexander Gorshkov <agorshkov@mznx.ru>"]
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.10"
+aiogram = "^2.24"
+python-dotenv = "^0.21.0"
+aiosqlite = "^0.18.0"
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
