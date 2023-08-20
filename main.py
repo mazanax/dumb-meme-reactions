@@ -1,6 +1,7 @@
 import asyncio
 import sys
 from os import getenv
+from random import choice
 
 import aiosqlite
 from dotenv import load_dotenv
@@ -27,12 +28,16 @@ bot = Bot(token=TELEGRAM_TOKEN, parse_mode=types.ParseMode.HTML)
 
 
 def get_markup(chat_id: str, message_id: int, hotdog: int, drunk: int,
-               comments: int) -> types.inline_keyboard.InlineKeyboardMarkup:
+               comments: int, emoji_list: list[str] | None = None) -> types.inline_keyboard.InlineKeyboardMarkup:
+    if emoji_list is None:
+        emoji_list = ["🌭", "🥴"]
+
     markup = types.inline_keyboard.InlineKeyboardMarkup()
     markup.row(
-        types.inline_keyboard.InlineKeyboardButton(text="🌭" if hotdog == 0 else f"🌭 ({hotdog})",
+        types.inline_keyboard.InlineKeyboardButton(text=emoji_list[0] if hotdog == 0 else f"{emoji_list[0]} ({hotdog})",
                                                    callback_data="hotdog"),
-        types.inline_keyboard.InlineKeyboardButton(text="🥴" if drunk == 0 else f"🥴 ({drunk})", callback_data="drunk"),
+        types.inline_keyboard.InlineKeyboardButton(text=emoji_list[1] if drunk == 0 else f"{emoji_list[1]} ({drunk})",
+                                                   callback_data="drunk"),
         types.inline_keyboard.InlineKeyboardButton(text=f"💬 ({comments})",
                                                    url=f"https://t.me/c/{chat_id}/{message_id}?thread={message_id}"),
     )
@@ -66,6 +71,18 @@ create table if not exists comments
 );""")
     await db.execute("create index if not exists comments_channel_message_id_index on comments (channel_message_id);")
     await db.execute("create index if not exists comments_thread_message_id_index on comments (thread_message_id);")
+
+    await db.execute("""
+    create table if not exists emoji_list
+    (
+        id                 INTEGER not null
+            constraint comments_pk
+                primary key autoincrement,
+        channel_message_id INTEGER not null,
+        first_reaction varchar
+        second_reaction
+    );""")
+    await db.execute("create index if not exists emoji_list_channel_message_id_index on emoji_list (channel_message_id);")
 
     await db.commit()
 
@@ -123,6 +140,22 @@ async def increment_comments_count(thread_message_id: int) -> None:
     await db.commit()
 
 
+async def get_emoji_list(message_id: int) -> list[str] | None:
+    async with db.execute(
+            'SELECT first_reaction, second_reaction FROM emoji_list WHERE channel_message_id = :message_id',
+            {'message_id': message_id}) as cursor:
+        row = await cursor.fetchone()
+        if not row:
+            return None
+        return [row[0], row[1]]
+
+
+async def generate_emoji_list(message_id: int, first_reaction: str, second_reaction: str) -> None:
+    await db.execute('INSERT INTO emoji_list (channel_message_id, first_reaction, second_reaction) VALUES (?, ?, ?)',
+                     (message_id, first_reaction, second_reaction))
+    await db.commit()
+
+
 async def get_comments_count(message_id: int) -> int:
     async with db.execute('SELECT cnt FROM comments WHERE channel_message_id = :message_id',
                           {'message_id': message_id}) as cursor:
@@ -137,10 +170,12 @@ async def update_reply_keyboard(chat_id: str, channel_message_id: int, group_mes
     drunk = await get_reactions_count(channel_message_id, 'drunk')
     comments = await get_comments_count(channel_message_id)
 
+    emoji_list = await get_emoji_list(channel_message_id)
+
     try:
         await bot.edit_message_reply_markup(chat_id=TARGET_CHANNEL, message_id=channel_message_id,
                                             reply_markup=get_markup(chat_id, group_message_id,
-                                                                    hotdog, drunk, comments))
+                                                                    hotdog, drunk, comments, emoji_list))
     except:  # that's OK. just ignore exceptions...
         pass
 
@@ -164,9 +199,13 @@ async def message_handler(message: types.Message):
     if not message.is_automatic_forward:
         return
 
+    first_reaction = choice(["🤙🏻", "👍🏻", "🔥", "🤣", "🌭", "🏄🏻‍♂️", "🤪", "🤡", "🤩"])
+    second_reaction = choice(["👎🏻", "💩", "🥴", "🤮", "💀", "🤦🏻‍♂️", "🤬", "😨", "🫣"])
+
     message_id = message.message_id
     channel_message_id = message.forward_from_message_id
     await save_comments_link(channel_message_id, message_id)
+    await generate_emoji_list(channel_message_id, first_reaction, second_reaction)
     await update_reply_keyboard(str(TARGET_GROUP)[4:], message.forward_from_message_id, message.message_id)
 
 
