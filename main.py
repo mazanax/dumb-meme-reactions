@@ -80,7 +80,7 @@ create table if not exists comments
                 primary key autoincrement,
         channel_message_id INTEGER not null,
         first_reaction varchar
-        second_reaction
+        second_reaction varchar
     );""")
     await db.execute("create index if not exists emoji_list_channel_message_id_index on emoji_list (channel_message_id);")
 
